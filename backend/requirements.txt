@@ -1,0 +1,23 @@
+# FastAPI and server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Environment and configuration
+python-dotenv==1.0.0
+pydantic[email]==2.5.3
+
+# Database
+sqlalchemy==2.0.25
+mysql-connector-python==8.3.0
+
+# Authentication and security
+passlib[bcrypt]==1.7.4
+
+# LangChain and AI
+langchain-core==0.1.23
+langchain-community==0.0.20
+langchain-groq==0.0.1
+
+# Groq API
+groq==0.4.1

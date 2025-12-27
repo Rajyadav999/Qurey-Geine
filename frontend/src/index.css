@@ -1,0 +1,251 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.75rem;
+
+    /* Query Genie Brand System */
+    --brand-50: 250 100% 97%;
+    --brand-100: 251 91% 95%;
+    --brand-200: 251 95% 87%;
+    --brand-300: 252 95% 78%;
+    --brand-400: 258 90% 66%;
+    --brand-500: 262 83% 58%;
+    --brand-600: 263 70% 50%;
+    --brand-700: 263 69% 42%;
+    --brand-800: 263 69% 35%;
+    --brand-900: 264 67% 29%;
+
+    /* Surface Colors */
+    --surface: 0 0% 100%;
+    --surface-elevated: 0 0% 98%;
+    --surface-overlay: 0 0% 100% / 0.9;
+    
+    /* Results Container Colors - ADDED */
+    --results-bg: 0 0% 100%;
+    --results-border: 214.3 31.8% 91.4%;
+    --code-bg: 220 13% 95%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+
+    /* Dark mode brand adjustments */
+    --brand-50: 264 67% 29%;
+    --brand-100: 263 69% 35%;
+    --brand-200: 263 69% 42%;
+    --brand-300: 263 70% 50%;
+    --brand-400: 262 83% 58%;
+    --brand-500: 258 90% 66%;
+    --brand-600: 252 95% 78%;
+    --brand-700: 251 95% 87%;
+    --brand-800: 251 91% 95%;
+    --brand-900: 250 100% 97%;
+
+    /* Dark surface colors */
+    --surface: 222.2 84% 4.9%;
+    --surface-elevated: 217.2 32.6% 17.5%;
+    --surface-overlay: 222.2 84% 4.9% / 0.9;
+    
+    /* Dark Results Container Colors - ADDED */
+    --results-bg: 217.2 32.6% 17.5%;
+    --results-border: 217.2 32.6% 17.5%;
+    --code-bg: 222.2 84% 4.9%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-muted/50;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/50 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/70;
+  }
+}
+
+@layer components {
+  /* Glassmorphism utility classes */
+  .glass {
+    @apply backdrop-blur-md bg-surface-overlay border border-border/50;
+  }
+
+  .glass-elevated {
+    @apply backdrop-blur-lg bg-surface-elevated/80 border border-border/30 shadow-lg;
+  }
+
+  /* Brand gradient utilities */
+  .gradient-brand {
+    background: linear-gradient(135deg, hsl(var(--brand-500)), hsl(var(--brand-700)));
+  }
+
+  .gradient-brand-subtle {
+    background: linear-gradient(135deg, hsl(var(--brand-100)), hsl(var(--brand-200)));
+  }
+
+  /* Animation utilities */
+  .animate-in {
+    @apply animate-fade-in;
+  }
+
+  /* Input focus styles */
+  .focus-brand {
+    @apply focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent;
+  }
+
+  /* Watermark */
+  .watermark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0.03;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+  }
+
+  /* Professional shadows */
+  .shadow-brand {
+    box-shadow: 0 4px 20px hsl(var(--brand-500) / 0.15);
+  }
+
+  .shadow-brand-lg {
+    box-shadow: 0 8px 40px hsl(var(--brand-500) / 0.20);
+  }
+
+  /* ADDED: Results Container Styles */
+  .results-container {
+    background-color: hsl(var(--results-bg));
+    border: 1px solid hsl(var(--results-border));
+    color: hsl(var(--foreground));
+  }
+
+  .code-block {
+    background-color: hsl(var(--code-bg));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
+  }
+
+  /* ADDED: Logo styling for theme support */
+  .logo-image {
+    transition: filter 0.3s ease, opacity 0.3s ease;
+  }
+
+  .dark .logo-image {
+    filter: brightness(1.3) contrast(1.1);
+    opacity: 0.95;
+  }
+}
+
+/* Professional typography scale */
+@layer utilities {
+  .text-display {
+    @apply text-4xl font-bold tracking-tight;
+  }
+
+  .text-headline {
+    @apply text-2xl font-semibold tracking-tight;
+  }
+
+  .text-title {
+    @apply text-xl font-medium;
+  }
+
+  .text-body {
+    @apply text-base font-normal;
+  }
+
+  .text-caption {
+    @apply text-sm font-medium text-muted-foreground;
+  }
+
+  .text-label {
+    @apply text-sm font-medium;
+  }
+
+  /* Chat Window Watermark - Diagonal pattern from bottom-left to top-right */
+  .chat-window-watermark {
+    position: relative;
+  }
+
+  .chat-window-watermark::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 300px;
+    height: 300px;
+    background-image: url('/src/assets/query-genie-logo.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    transform: translate(-50%, -50%);
+    transform-origin: center;
+    opacity: 0.08;
+    pointer-events: none;
+    z-index: 0;
+    filter: grayscale(0%);
+  }
+
+  /* Dark mode watermark adjustment - UPDATED */
+  .dark .chat-window-watermark::before {
+    opacity: 0.12;
+    filter: brightness(1.4) grayscale(0%);
+  }
+}
