@@ -1,0 +1,178 @@
+# Query Genie 🧞
+
+Query Genie is an AI-powered application that allows users to interact with relational databases using **natural language instead of writing SQL manually**.  
+It converts plain English questions into executable SQL queries and returns structured results in real time.
+
+> Example:  
+> **“Show the top 5 customers by total purchase amount”**  
+> → Automatically translated into SQL and executed on the connected database.
+
+-----
+
+## 🌐 Live Demo
+
+🔗 **Deployed Application:**  
+https://your-deployment-link-here
+
+> ⚠️ Note: Use test database credentials only.  
+> Do not connect production databases.
+
+-----
+
+## 🚀 Features
+
+- 🔐 Secure user authentication with OTP-based email verification  
+- 💬 Natural Language → SQL query generation using AI  
+- 🧠 Context-aware SQL generation using live database schema  
+- 📊 Interactive tabular visualization of query results  
+- 💾 Persistent chat and query history  
+- 🔄 Dynamic database connection using user-provided credentials  
+- ⚠️ Detection and warning for dangerous SQL operations (DROP, DELETE, UPDATE)
+
+-----
+
+## 🧠 How Query Genie Works
+
+1. User submits a natural language query from the frontend  
+2. Backend fetches the connected database schema  
+3. LangChain constructs a structured prompt with schema and user intent  
+4. Groq LLM generates the corresponding SQL query  
+5. Query is analyzed for potentially destructive operations  
+6. Safe queries are executed on the database  
+7. Results are returned and rendered in the UI  
+
+-----
+
+## 🛠️ Tech Stack
+
+### Frontend
+- React + TypeScript
+- Vite
+- Tailwind CSS
+- Lucide Icons
+
+### Backend
+- FastAPI
+- LangChain
+- Groq LLM
+- SQLAlchemy ORM
+- MySQL Connector
+- Passlib (bcrypt)
+
+-----
+
+## 📋 Prerequisites
+
+- Python 3.8 or higher  
+- Node.js 16 or higher  
+- MySQL Server  
+- Groq API Key  
+
+-----
+
+## 📦 Installation & Setup
+
+### Clone the Repository
+```bash
+git clone https://github.com/YOUR_USERNAME/query-genie.git
+cd query-genie
+
+### 2. Backend Setup
+```bash
+cd query-genie/backend
+
+# Create virtual environment
+python -m venv venv
+
+# Activate it
+# Windows:
+venv\Scripts\activate
+# Mac/Linux:
+source venv/bin/activate
+
+# Install all dependencies in one command!
+pip install -r requirements.txt
+
+Create a .env file inside the backend directory:
+GROQ_API_KEY=your_groq_api_key
+EMAIL_HOST_USER=your_email@gmail.com
+EMAIL_HOST_PASSWORD=your_email_app_password
+
+### 3. Frontend Setup
+```bash
+cd query-genie/frontend
+npm install
+```
+
+-----
+
+
+## Running the Application
+
+###  Start Backend
+```bash
+cd backend
+python -m uvicorn backend:app --reload --host 0.0.0.0 --port 8000
+
+
+### Start Frontend
+```bash
+cd frontend
+npm run dev
+```
+
+Access the application at `http://localhost:5173`
+
+## Configuration
+
+### Database Connection
+1. Login to the application
+2. Navigate to Database Settings
+3. Enter your MySQL credentials:
+   - Host
+   - Port
+   - Username
+   - Password
+   - Database name
+
+## Project Structure
+```
+query-genie/
+├── backend/
+│   ├── backend.py          # Main FastAPI application
+│   ├── requirements.txt    # Python dependencies
+│   └── .env               # Environment variables (not in git)
+├── frontend/
+│   ├── src/
+│   │   ├── components/    # React components
+│   │   ├── pages/         # Page components
+│   │   └── App.tsx        # Main app component
+│   ├── package.json
+│   └── vite.config.ts
+└── README.md
+```
+
+🔐 Security Notes :- 
+Passwords are hashed using bcrypt
+OTP-based email verification
+Read-heavy query bias enforced at prompt level
+Explicit warnings for destructive SQL commands
+
+⚠️ This project is intended for educational and experimental use.
+Additional security hardening is required for production environments.
+
+
+🤝 Contributing
+Contributions, issues, and feature requests are welcome.
+Fork the repository
+Create a new branch
+Commit your changes
+Open a Pull Request
+
+📄 License
+This project is licensed under the MIT License.
+
+👤 Author
+Raj Rajkumar Yadav
+GitHub: https://github.com/Rajyadav999
+Linkedin: www.linkedin.com/in/raj-yadav-706b60397
