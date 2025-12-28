@@ -21,7 +21,7 @@ const UserProfile = () => {
 
   if (!user) return null;
 
-  // ✅ FIXED: Safe initials generation
+  // ✅ Safe initials generation
   const getInitials = () => {
     const first = user.firstName?.charAt(0)?.toUpperCase() || '';
     const last = user.lastName?.charAt(0)?.toUpperCase() || '';
@@ -29,6 +29,12 @@ const UserProfile = () => {
   };
 
   const initials = getInitials();
+
+  // ✅ FIX: Logout handler now properly calls AuthContext logout
+  const handleLogout = () => {
+    console.log('[USER_PROFILE] Logout initiated');
+    logout(); // This will clear localStorage and navigate to home
+  };
 
   return (
     <>
@@ -83,7 +89,7 @@ const UserProfile = () => {
           <DropdownMenuSeparator />
           
           <DropdownMenuItem 
-            onClick={logout}
+            onClick={handleLogout}
             className="text-destructive focus:text-destructive"
           >
             <LogOut className="mr-2 h-4 w-4" />

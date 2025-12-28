@@ -1,18 +1,17 @@
 import { useState } from 'react';
-import { Menu, Database, MessageSquare, MoreVertical, Upload, Trash2, Plus, RefreshCw, Unplug } from 'lucide-react';
+import { Menu, Database, MessageSquare, MoreVertical, Trash2, Plus, RefreshCw, Unplug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useToast } from '@/hooks/use-toast';
+
+const API_BASE = "http://localhost:8000";
 
 interface ChatSession {
   id: string;
+  user_id?: number;
   title: string;
-  timestamp: string | number | Date; // ✅ Accept multiple formats
+  timestamp: string | number | Date;
   messages: Array<{
     id: string;
     content: string;
@@ -33,120 +32,108 @@ interface SidebarProps {
   currentChatId: string | null;
   onDeleteChat: (chatId: string) => void;
   onDisconnect: () => void;
+  userId: number | null;
+  isLoadingHistory?: boolean;
 }
 
-// ✅ ADD: Timestamp formatting function
 const formatTimestamp = (timestamp: string | number | Date): string => {
-  // If it's already a formatted string like "2 hours ago", return it
+  // Handle invalid timestamps
+  if (!timestamp) {
+    return 'Just now';
+  }
+
+  // If it's already a formatted string (from old data), return it
   if (typeof timestamp === 'string' && (timestamp.includes('ago') || timestamp.includes('now'))) {
     return timestamp;
   }
 
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffInMs = now.getTime() - date.getTime();
-  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  try {
+    const date = new Date(timestamp);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'Just now';
+    }
 
-  if (diffInMinutes < 1) {
-    return 'Just now';
-  } else if (diffInMinutes < 60) {
-    return `${diffInMinutes} min${diffInMinutes > 1 ? 's' : ''} ago`;
-  } else if (diffInHours < 24) {
-    return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
-  } else if (diffInDays < 7) {
-    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
-  } else if (diffInDays < 30) {
-    const weeks = Math.floor(diffInDays / 7);
-    return `${weeks} week${weeks > 1 ? 's' : ''} ago`;
-  } else if (diffInDays < 365) {
-    const months = Math.floor(diffInDays / 30);
-    return `${months} month${months > 1 ? 's' : ''} ago`;
-  } else {
-    // For very old chats, show the actual date
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      year: 'numeric'
-    });
+    // Format: YYYY-MM-DDTHH:MM:SS.sssZ
+    return date.toISOString();
+  } catch (error) {
+    console.error('Error formatting timestamp:', error);
+    return new Date().toISOString();
   }
 };
 
-// Mock chat history data
-const mockChatHistory = [
-  { id: '1', title: 'User analytics query', timestamp: '2 hours ago', preview: 'Show me users who signed up last month' },
-  { id: '2', title: 'Product sales data', timestamp: '1 day ago', preview: 'Get total sales for each product category' },
-  { id: '3', title: 'Performance metrics', timestamp: '2 days ago', preview: 'Find slowest queries in the database' },
-  { id: '4', title: 'Customer segments', timestamp: '3 days ago', preview: 'Group customers by purchase behavior' },
-  { id: '5', title: 'Revenue analysis', timestamp: '1 week ago', preview: 'Calculate monthly recurring revenue' },
-];
+const Sidebar = ({ 
+  isCollapsed, 
+  onToggleCollapse, 
+  isConnected, 
+  onConnect, 
+  onNewChat, 
+  chatHistory = [], 
+  onOpenModal, 
+  onChatSelect, 
+  currentChatId, 
+  onDeleteChat, 
+  onDisconnect,
+  userId,
+  isLoadingHistory = false
+}: SidebarProps) => {
+  const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
+  
+  // Ensure chatHistory is always an array
+  const safeHistory = Array.isArray(chatHistory) ? chatHistory : [];
 
-const Sidebar = ({ isCollapsed, onToggleCollapse, isConnected, onConnect, onNewChat, chatHistory, onOpenModal, onChatSelect, currentChatId, onDeleteChat, onDisconnect }: SidebarProps) => {
-  const [selectedDataSource, setSelectedDataSource] = useState<string>('');
-  const [connectionForm, setConnectionForm] = useState({
-    host: '',
-    username: '',
-    password: '',
-    database: ''
-  });
-  const [localChatHistory, setLocalChatHistory] = useState(mockChatHistory);
-  const { toast } = useToast();
-
-  const handleConnect = () => {
-    if (selectedDataSource === 'mysql' || selectedDataSource === 'postgresql') {
-      if (!connectionForm.host || !connectionForm.username || !connectionForm.password || !connectionForm.database) {
-        toast({
-          title: "Connection Error",
-          description: "Please fill in all required fields",
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-    
-    onConnect({ 
-      type: selectedDataSource, 
-      ...connectionForm 
-    });
-    
-    toast({
-      title: "Connected Successfully",
-      description: `Connected to ${selectedDataSource.toUpperCase()}`,
-    });
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      onConnect({ 
-        type: 'excel', 
-        file: file.name 
-      });
-      
-      toast({
-        title: "File Uploaded",
-        description: `Excel file "${file.name}" uploaded successfully`,
-      });
-    }
-  };
-
-  const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
+  const handleDeleteChat = async (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    onDeleteChat(chatId);
-    toast({
-      title: "Chat Deleted",
-      description: "Chat history has been removed",
-    });
-  };
+    
+    if (!userId) {
+      console.error('User not authenticated');
+      return;
+    }
 
+    const chatExists = safeHistory.find(chat => chat?.id === chatId);
+    if (!chatExists) {
+      console.error('[SIDEBAR] Chat not found in local state:', chatId);
+      return;
+    }
+
+    setDeletingChatId(chatId);
+
+    try {
+      console.log(`[SIDEBAR] Deleting chat ${chatId} for user ${userId}`);
+      
+      const response = await fetch(
+        `${API_BASE}/api/chat-sessions/${chatId}?user_id=${userId}`,
+        { method: 'DELETE' }
+      );
+
+      if (response.ok) {
+        console.log(`[SIDEBAR] Successfully deleted chat ${chatId}`);
+        onDeleteChat(chatId);
+      } else {
+        if (response.status === 404) {
+          console.warn(`[SIDEBAR] Chat ${chatId} not found (404), removing from UI`);
+          onDeleteChat(chatId);
+        } else if (response.status === 403) {
+          console.error('Permission denied');
+        } else {
+          console.error(`[SIDEBAR] Delete failed with status ${response.status}`);
+          onDeleteChat(chatId);
+        }
+      }
+    } catch (error: any) {
+      console.error('[SIDEBAR] Delete error:', error);
+      onDeleteChat(chatId);
+    } finally {
+      setDeletingChatId(null);
+    }
+  };
 
   return (
     <div className={`relative h-full bg-surface-elevated border-r border-border transition-all duration-300 ${
       isCollapsed ? 'w-16' : 'w-64'
     }`}>
       <div className="flex flex-col h-full">
-        {/* Header */}
         <div className="flex items-center justify-end p-4 border-b border-border">
           <Button
             variant="ghost"
@@ -158,11 +145,9 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isConnected, onConnect, onNewC
           </Button>
         </div>
 
-        {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {!isCollapsed && (
             <>
-              {/* Connection Status */}
               <div className="p-3 border-b border-border">
                 <div className="flex items-center gap-2 text-xs">
                   <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-destructive'}`}></div>
@@ -172,18 +157,14 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isConnected, onConnect, onNewC
                 </div>
               </div>
 
-              {/* Data Source Connection Button (if not connected) */}
-              {!isConnected && (
+              {!isConnected ? (
                 <div className="p-3 border-b border-border">
                   <Button onClick={onOpenModal} size="sm" className="w-full h-8 text-xs">
                     <Database size={14} className="mr-2" />
                     Connect Database
                   </Button>
                 </div>
-              )}
-
-              {/* Switch Database and Disconnect options (when connected) */}
-              {isConnected && (
+              ) : (
                 <div className="p-3 border-b border-border space-y-2">
                   <Button onClick={onOpenModal} variant="outline" size="sm" className="w-full h-8 text-xs">
                     <RefreshCw size={14} className="mr-2" />
@@ -196,7 +177,6 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isConnected, onConnect, onNewC
                 </div>
               )}
 
-              {/* Chat History */}
               <div className="flex items-center justify-between p-3 border-b border-border">
                 <h3 className="text-xs font-medium text-muted-foreground">Chat History</h3>
                 <TooltipProvider>
@@ -219,7 +199,11 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isConnected, onConnect, onNewC
               </div>
               
               <ScrollArea className="flex-1 px-2">
-                {chatHistory.length === 0 ? (
+                {isLoadingHistory ? (
+                  <div className="flex items-center justify-center h-32">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-600"></div>
+                  </div>
+                ) : safeHistory.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full p-6 text-center">
                     <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
                       <MessageSquare size={20} className="text-muted-foreground" />
@@ -229,58 +213,65 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isConnected, onConnect, onNewC
                   </div>
                 ) : (
                   <div className="space-y-1 p-2">
-                    {chatHistory.map((chat) => (
+                    {safeHistory.map((chat) => (
                       <div
                         key={chat.id}
-                        className={`relative group rounded-lg transition-all duration-200 hover:bg-muted ${
-                          currentChatId === chat.id ? 'bg-brand-50 border-l-2 border-brand-500' : ''
-                        }`}
+                        className={`group relative rounded-lg transition-all duration-200 ${
+                          currentChatId === chat.id ? 'bg-brand-50 border-l-2 border-brand-500' : 'hover:bg-muted'
+                        } ${deletingChatId === chat.id ? 'opacity-50' : ''}`}
                       >
-                        <button
-                          onClick={() => onChatSelect(chat.id)}
-                          className="w-full text-left p-2"
-                        >
-                          <div className="flex items-start gap-2">
-                            <MessageSquare 
-                              size={12} 
-                              className={`mt-1 flex-shrink-0 ${
-                                currentChatId === chat.id ? 'text-brand-600' : 'text-muted-foreground'
-                              }`} 
-                            />
-                            <div className="flex-1 min-w-0">
-                              <h4 className={`font-medium text-xs truncate ${
-                                currentChatId === chat.id ? 'text-brand-700' : 'text-foreground'
-                              }`}>
-                                {chat.title}
-                              </h4>
-                              {/* ✅ UPDATED: Use formatTimestamp function */}
-                              <p className="text-xs text-muted-foreground truncate mt-1">
-                                {formatTimestamp(chat.timestamp)}
-                              </p>
+                        <div className="flex items-center">
+                          <button
+                            onClick={() => onChatSelect(chat.id)}
+                            disabled={deletingChatId === chat.id}
+                            className="flex-1 text-left p-2"
+                          >
+                            <div className="flex items-start gap-2">
+                              <MessageSquare 
+                                size={12} 
+                                className={`mt-1 flex-shrink-0 ${
+                                  currentChatId === chat.id ? 'text-brand-600' : 'text-muted-foreground'
+                                }`} 
+                              />
+                              <div className="flex-1 min-w-0 pr-2">
+                                <h4 className={`font-medium text-xs truncate ${
+                                  currentChatId === chat.id ? 'text-brand-700' : 'text-foreground'
+                                }`}>
+                                  {chat.title}
+                                </h4>
+                                <p className="text-[10px] text-muted-foreground truncate mt-0.5 font-mono">
+                                  {formatTimestamp(chat.timestamp)}
+                                </p>
+                              </div>
                             </div>
+                          </button>
+                          
+                          {/* Three-dot menu appears on hover */}
+                          <div className="flex-shrink-0 pr-2">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={deletingChatId === chat.id}
+                                  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/20 transition-opacity"
+                                >
+                                  <MoreVertical size={14} />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={(e) => handleDeleteChat(chat.id, e)}
+                                  disabled={deletingChatId === chat.id}
+                                  className="text-destructive text-sm cursor-pointer"
+                                >
+                                  <Trash2 size={14} className="mr-2" />
+                                  {deletingChatId === chat.id ? 'Deleting...' : 'Delete'}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
-                        </button>
-                        
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 h-5 w-5"
-                            >
-                              <MoreVertical size={10} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => handleDeleteChat(chat.id, e)}
-                              className="text-destructive text-xs"
-                            >
-                              <Trash2 size={10} className="mr-1" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        </div>
                       </div>
                     ))}
                   </div>

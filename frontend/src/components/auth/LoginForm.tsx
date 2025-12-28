@@ -51,13 +51,20 @@ const LoginForm = ({ onSwitchToSignup }: LoginFormProps) => {
     if (!validateForm()) return;
     
     try {
+      console.log('[LOGIN_FORM] Submitting login...');
+      
+      // ✅ FIX: login() now handles navigation and localStorage automatically
       const success = await login(formData);
+      
       if (success) {
+        console.log('[LOGIN_FORM] Login successful');
         toast({
           title: "Welcome back!",
           description: "You have been successfully logged in.",
         });
+        // ✅ Navigation is handled by AuthContext, no need to navigate here
       } else {
+        console.log('[LOGIN_FORM] Login failed');
         toast({
           variant: "destructive",
           title: "Login failed",
@@ -65,6 +72,7 @@ const LoginForm = ({ onSwitchToSignup }: LoginFormProps) => {
         });
       }
     } catch (error) {
+      console.error('[LOGIN_FORM] Error:', error);
       toast({
         variant: "destructive",
         title: "Error",

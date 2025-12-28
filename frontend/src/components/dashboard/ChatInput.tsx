@@ -34,9 +34,9 @@ const ChatInput = ({ onSend, isLoading, isConnected, onOpenModal }: ChatInputPro
   };
 
   return (
-    <div className="bg-surface-elevated p-4 border-t border-border">
+    <div className="bg-white p-4">
       <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-        <div className="relative">
+        <div className="relative rounded-[26px] border border-gray-300 focus-within:border-gray-500 transition-colors">
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -46,7 +46,7 @@ const ChatInput = ({ onSend, isLoading, isConnected, onOpenModal }: ChatInputPro
                 ? "Ask me anything about your data..." 
                 : "Connect to a database to start querying..."
             }
-            className="w-full min-h-[3rem] max-h-32 resize-none p-3 pr-24 bg-surface border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 text-foreground"
+            className="w-full min-h-[3rem] max-h-32 resize-none p-3 pr-24 bg-transparent border-0 rounded-[26px] focus:outline-none focus:ring-0 text-gray-900"
             disabled={isLoading}
           />
           <div className="absolute right-2 bottom-2 flex items-center gap-1">
@@ -66,7 +66,7 @@ const ChatInput = ({ onSend, isLoading, isConnected, onOpenModal }: ChatInputPro
             <Button
               type="submit"
               size="icon"
-              className="h-8 w-8 bg-brand-600 hover:bg-brand-700"
+              className="h-8 w-8 bg-blue-600 hover:bg-blue-700"
               disabled={!message.trim() || isLoading}
               title="Send message"
             >
@@ -78,7 +78,7 @@ const ChatInput = ({ onSend, isLoading, isConnected, onOpenModal }: ChatInputPro
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground text-center mt-2">
+        <p className="text-xs text-gray-600 text-center mt-2">
           {isConnected 
             ? "Press Enter to send • Shift+Enter for new line" 
             : "Connect to your database to start exploring"}

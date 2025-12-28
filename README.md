@@ -94,18 +94,35 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 Create a .env file inside the backend directory:
-GROQ_API_KEY=your_groq_api_key
+# Groq API Configuration
+GROQ_API_KEY=your_groq_api_key_here
+
+# Email Configuration (Gmail)
 EMAIL_HOST_USER=your_email@gmail.com
-EMAIL_HOST_PASSWORD=your_email_app_password
+EMAIL_HOST_PASSWORD=your_app_password_here
+
+#Getting API Keys
+Groq API Key
+Visit Groq Console
+Sign up for a free account
+Generate an API key from the dashboard
+
+#Gmail App Password
+Enable 2-factor authentication on your Google account
+Go to App Passwords
+Generate a new app password for "Mail"
+Use this password in your .env file
 
 ### 3. Frontend Setup
+Navigate to frontend directory (if separate)
 ```bash
 cd query-genie/frontend
+
+Install dependencies
 npm install
 ```
 
 -----
-
 
 ## Running the Application
 
@@ -153,14 +170,23 @@ query-genie/
 ```
 
 🔐 Security Notes :- 
-Passwords are hashed using bcrypt
-OTP-based email verification
-Read-heavy query bias enforced at prompt level
-Explicit warnings for destructive SQL commands
+* **Password Hashing** – Passwords stored as bcrypt hashes
+* **OTP Verification** – Email-based one-time password for signup
+* **SQL Injection Protection** – Parameterized queries using SQLAlchemy
+* **Destructive Operation Warnings** – Confirmation required for DELETE, DROP, UPDATE
+* **Connection Pooling** – Efficient reuse of database connections
+* **Input Validation** – Request validation using Pydantic models
+
+Acknowledgments
+- FastAPI – Modern Python web framework
+- LangChain – Framework for building LLM applications
+- Groq – High-performance LLM inference engine
+- React – Frontend JavaScript framework
+- Tailwind CSS – Utility-first CSS framework
+- shadcn/ui – Prebuilt, accessible UI components
 
 ⚠️ This project is intended for educational and experimental use.
 Additional security hardening is required for production environments.
-
 
 🤝 Contributing
 Contributions, issues, and feature requests are welcome.

@@ -17,7 +17,7 @@ const SignupForm = ({ onSwitchToLogin }: SignupFormProps) => {
     firstName: '',
     lastName: '',
     username: '',  
-    phone: '',  // ✅ CHANGED: contactNumber → phone
+    phone: '',  
     gender: '',
     email: '',
     password: '',
@@ -107,17 +107,17 @@ const SignupForm = ({ onSwitchToLogin }: SignupFormProps) => {
     // Remove all non-digit characters
     const cleaned = phone.replace(/\D/g, '');
     
-    // If it starts with country code, use as is
+    
     if (phone.startsWith('+')) {
       return phone.replace(/\s/g, '');
     }
     
-    // If it's 10 digits, assume India (+91)
+    
     if (cleaned.length === 10) {
       return `+91${cleaned}`;
     }
     
-    // If it already has country code without +, add +
+    
     if (cleaned.length > 10) {
       return `+${cleaned}`;
     }
@@ -142,7 +142,7 @@ const SignupForm = ({ onSwitchToLogin }: SignupFormProps) => {
       const apiUrl = `http://localhost:8000/api/send-otp`;
       const formattedPhone = formatPhoneNumber(formData.phone);
       
-      // ✅ UPDATED: Send both email and phone
+     
       const response = await axios.post(apiUrl, { 
         email: formData.email,
         phone: formattedPhone
@@ -150,7 +150,7 @@ const SignupForm = ({ onSwitchToLogin }: SignupFormProps) => {
       
       if (response.data.success) {
         setOtpSent(true);
-        // Update phone with formatted version
+        
         setFormData(prev => ({ ...prev, phone: formattedPhone }));
         toast({
           title: "OTP Sent!",

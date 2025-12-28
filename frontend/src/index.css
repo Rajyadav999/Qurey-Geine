@@ -43,7 +43,7 @@
     --surface-elevated: 0 0% 98%;
     --surface-overlay: 0 0% 100% / 0.9;
     
-    /* Results Container Colors - ADDED */
+    /* Results Container Colors */
     --results-bg: 0 0% 100%;
     --results-border: 214.3 31.8% 91.4%;
     --code-bg: 220 13% 95%;
@@ -87,7 +87,7 @@
     --surface-elevated: 217.2 32.6% 17.5%;
     --surface-overlay: 222.2 84% 4.9% / 0.9;
     
-    /* Dark Results Container Colors - ADDED */
+    /* Dark Results Container Colors */
     --results-bg: 217.2 32.6% 17.5%;
     --results-border: 217.2 32.6% 17.5%;
     --code-bg: 222.2 84% 4.9%;
@@ -148,18 +148,6 @@
     @apply focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent;
   }
 
-  /* Watermark */
-  .watermark {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    opacity: 0.03;
-    pointer-events: none;
-    user-select: none;
-    z-index: 0;
-  }
-
   /* Professional shadows */
   .shadow-brand {
     box-shadow: 0 4px 20px hsl(var(--brand-500) / 0.15);
@@ -169,7 +157,7 @@
     box-shadow: 0 8px 40px hsl(var(--brand-500) / 0.20);
   }
 
-  /* ADDED: Results Container Styles */
+  /* Results Container Styles */
   .results-container {
     background-color: hsl(var(--results-bg));
     border: 1px solid hsl(var(--results-border));
@@ -182,7 +170,7 @@
     border: 1px solid hsl(var(--border));
   }
 
-  /* ADDED: Logo styling for theme support */
+  /* Logo styling for theme support */
   .logo-image {
     transition: filter 0.3s ease, opacity 0.3s ease;
   }
@@ -219,33 +207,10 @@
     @apply text-sm font-medium;
   }
 
-  /* Chat Window Watermark - Diagonal pattern from bottom-left to top-right */
+  /* Chat Window - NO WATERMARK */
   .chat-window-watermark {
     position: relative;
   }
 
-  .chat-window-watermark::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 300px;
-    height: 300px;
-    background-image: url('/src/assets/query-genie-logo.png');
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    transform: translate(-50%, -50%);
-    transform-origin: center;
-    opacity: 0.08;
-    pointer-events: none;
-    z-index: 0;
-    filter: grayscale(0%);
-  }
-
-  /* Dark mode watermark adjustment - UPDATED */
-  .dark .chat-window-watermark::before {
-    opacity: 0.12;
-    filter: brightness(1.4) grayscale(0%);
-  }
+  /* Watermark removed - keeping class name for compatibility */
 }

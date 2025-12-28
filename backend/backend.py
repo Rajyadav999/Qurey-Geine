@@ -16,9 +16,9 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_community.utilities import SQLDatabase
 from langchain_groq import ChatGroq
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, inspect
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, inspect, text, pool
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError, ProgrammingError
 import ast
 import json
 import re
@@ -37,11 +37,31 @@ if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
 # Password Hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# SQLite Database Setup
+# ============= TIMEZONE HELPER =============
+def make_tz_aware(dt):
+    """Make datetime timezone-aware if it's naive (SQLite compatibility)"""
+    if dt and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+# ============= FIX #2: DATABASE SETUP WITH CONNECTION POOLING =============
 SQLITE_DB_FILE = "users.db"
-engine = create_engine(f"sqlite:///{SQLITE_DB_FILE}", echo=False)
+
+# Connection pooling for SQLite (users database)
+engine = create_engine(
+    f"sqlite:///{SQLITE_DB_FILE}",
+    echo=False,
+    poolclass=pool.QueuePool,
+    pool_size=10,          # Keep 10 connections open
+    max_overflow=20,       # Allow 20 more when busy
+    pool_timeout=30,       # Wait 30 seconds for connection
+    pool_recycle=3600,     # Recycle connections after 1 hour
+    pool_pre_ping=True     # Test connections before use
+)
+
 Base = declarative_base()
 
+# ============= DATABASE MODELS =============
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -60,10 +80,18 @@ class ChatSession(Base):
     title = Column(String, nullable=False)
     messages = Column(Text, nullable=False)
 
-# Create the database tables
+# ============= FIX #1: OTP TABLE (In Database, Not Memory) =============
+class OTP(Base):
+    __tablename__ = "otps"
+    email = Column(String, primary_key=True, index=True)
+    otp = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+# Create all tables
 Base.metadata.create_all(engine)
 
-# Create a session factory
+# Session factory with connection pooling
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 app = FastAPI()
@@ -72,24 +100,16 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:8080",
-        "http://localhost:8081", 
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:8080",
-        "http://127.0.0.1:8081",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
+        "http://localhost:8080", "http://localhost:8081", 
+        "http://localhost:5173", "http://localhost:3000",
+        "http://127.0.0.1:8080", "http://127.0.0.1:8081",
+        "http://127.0.0.1:5173", "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
-# Global storage
-otp_storage = {}
-pending_sql_actions = {}
 
 # Pydantic Models
 class DBConfig(BaseModel):
@@ -172,42 +192,28 @@ def send_otp_email(recipient_email: str, otp: str) -> bool:
         print(f"[OTP] Failed to send email to {recipient_email}: {e}")
         return False
 
-# ============= IMPROVED SQL SAFETY =============
-# SQL Injection Prevention
+# SQL Safety
 DANGEROUS_KEYWORDS = ["DROP", "TRUNCATE", "DELETE", "ALTER", "UPDATE"]
 FORBIDDEN_PATTERNS = [
-    r";\s*DROP",  # SQL injection attempt
-    r"--",  # SQL comments
-    r"/\*.*\*/",  # SQL multi-line comments
-    r"UNION\s+SELECT",  # UNION-based injection
-    r"OR\s+1\s*=\s*1",  # Always-true conditions
-    r"AND\s+1\s*=\s*1",
-    r"'\s*OR\s*'",
-    r";\s*EXEC",  # Command execution
-    r"xp_cmdshell",  # SQL Server command execution
+    r";\s*DROP", r"--", r"/\*.*\*/", r"UNION\s+SELECT",
+    r"OR\s+1\s*=\s*1", r"AND\s+1\s*=\s*1", r"'\s*OR\s*'",
+    r";\s*EXEC", r"xp_cmdshell",
 ]
 
 def detect_dangerous_sql(sql: str):
-    """Enhanced SQL danger detection"""
     sql_upper = sql.upper()
     dangerous = [kw for kw in DANGEROUS_KEYWORDS if kw in sql_upper]
-    
-    # Check for injection patterns
     for pattern in FORBIDDEN_PATTERNS:
         if re.search(pattern, sql, re.IGNORECASE):
             dangerous.append(f"INJECTION_PATTERN: {pattern}")
-    
     return dangerous
 
 def sanitize_sql_input(sql: str) -> str:
-    """Basic SQL sanitization"""
-    # Remove dangerous characters and patterns
-    sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)  # Remove SQL comments
-    sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)  # Remove multi-line comments
+    sql = re.sub(r'--.*$', '', sql, flags=re.MULTILINE)
+    sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
     return sql.strip()
 
 def sql_to_table_preview(sql: str):
-    """Generate preview table for dangerous operations"""
     sql_upper = sql.upper()
     action = "UNKNOWN"
     table = "-"
@@ -248,70 +254,50 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 def get_user(identifier: str, db):
-    """Get user by email OR username"""
-    user = db.query(User).filter(
+    return db.query(User).filter(
         (User.email == identifier) | (User.username == identifier)
     ).first()
-    return user
 
-# ============= IMPROVED COLUMN DETECTION =============
+# Column Detection
 def get_columns_from_query_result(db_uri: str, sql_query: str) -> list:
-    """
-    Execute query and get actual column names from result metadata.
-    This is the most reliable method.
-    """
     try:
         from sqlalchemy import create_engine, text
         engine = create_engine(db_uri)
-        
         with engine.connect() as conn:
             result = conn.execute(text(sql_query))
-            # Get column names directly from result metadata
             columns = list(result.keys())
             return columns
     except Exception as e:
-        print(f"Error getting columns from query result: {e}")
+        print(f"Error getting columns: {e}")
         return []
 
 def get_columns_from_table_inspector(db_uri: str, table_name: str) -> list:
-    """
-    Use SQLAlchemy inspector to get column names from table schema.
-    Most reliable for table structure.
-    """
     try:
         from sqlalchemy import create_engine, inspect
         engine = create_engine(db_uri)
         inspector = inspect(engine)
-        
-        # Get columns for the table
         columns = [col['name'] for col in inspector.get_columns(table_name)]
-        print(f"Inspector found columns for {table_name}: {columns}")
         return columns
     except Exception as e:
-        print(f"Error using inspector: {e}")
         return []
 
 def extract_table_name_from_query(sql_query: str) -> str:
-    """Extract table name from SQL query"""
     try:
-        # Handle different query formats
         patterns = [
-            r'FROM\s+`?(\w+)`?',  # Standard FROM clause
-            r'JOIN\s+`?(\w+)`?',  # JOIN clause
-            r'INTO\s+`?(\w+)`?',  # INSERT INTO
-            r'UPDATE\s+`?(\w+)`?',  # UPDATE
+            r'FROM\s+`?(\w+)`?',
+            r'JOIN\s+`?(\w+)`?',
+            r'INTO\s+`?(\w+)`?',
+            r'UPDATE\s+`?(\w+)`?',
         ]
-        
         for pattern in patterns:
             match = re.search(pattern, sql_query, re.IGNORECASE)
             if match:
                 return match.group(1)
         return None
     except Exception as e:
-        print(f"Error extracting table name: {e}")
         return None
 
-# LangChain Helpers
+# LangChain
 def get_sql_chain(db):
     template = """
     You are a MySQL expert. Given the schema and chat history,
@@ -359,11 +345,8 @@ def get_response(question, db, chat_history, db_uri):
         sql_query = re.sub(r'^```sql\s*', '', sql_query)
         sql_query = re.sub(r'\s*```$', '', sql_query)
         sql_query = sql_query.strip()
-        
-        # Sanitize SQL to prevent injection
         sql_query = sanitize_sql_input(sql_query)
         
-        # Check for dangerous operations
         dangerous_ops = detect_dangerous_sql(sql_query)
         
         if dangerous_ops:
@@ -378,27 +361,18 @@ def get_response(question, db, chat_history, db_uri):
         is_select = sql_upper.startswith('SELECT')
         
         if is_select:
-            # Method 1: Get columns from query execution (MOST RELIABLE)
             columns = get_columns_from_query_result(db_uri, sql_query)
-            
-            # Method 2: If that fails, try inspector on table
             if not columns:
                 table_name = extract_table_name_from_query(sql_query)
                 if table_name:
                     columns = get_columns_from_table_inspector(db_uri, table_name)
-            
-            print(f"\n=== COLUMN DETECTION ===")
-            print(f"SQL: {sql_query}")
-            print(f"Detected Columns: {columns}")
-            print(f"========================\n")
         
-        # Execute query
         result = db.run(sql_query)
         
         if is_select:
             clean_result = result.strip()
             
-            if clean_result == '[]' or clean_result == '' or 'Empty set' in clean_result or '0 rows' in clean_result:
+            if clean_result == '[]' or clean_result == '' or 'Empty set' in clean_result:
                 output_data = {
                     "type": "select",
                     "data": [],
@@ -408,7 +382,6 @@ def get_response(question, db, chat_history, db_uri):
             elif clean_result.startswith('[') and clean_result.endswith(']'):
                 try:
                     cleaned = re.sub(r"Decimal\('([^']+)'\)", r"'\1'", clean_result)
-                    
                     try:
                         raw_data = json.loads(cleaned.replace("'", '"').replace('None', 'null'))
                     except:
@@ -434,16 +407,6 @@ def get_response(question, db, chat_history, db_uri):
                         else:
                             data = [[str(item) if item is not None else ''] for item in raw_data]
                         
-                        # Ensure column count matches data
-                        if data and columns:
-                            expected_cols = len(data[0])
-                            if len(columns) != expected_cols:
-                                print(f"WARNING: Column count mismatch. Columns: {len(columns)}, Data: {expected_cols}")
-                                # Re-fetch columns if mismatch
-                                table_name = extract_table_name_from_query(sql_query)
-                                if table_name:
-                                    columns = get_columns_from_table_inspector(db_uri, table_name)
-                        
                         output_data = {
                             "type": "select",
                             "data": data,
@@ -453,25 +416,23 @@ def get_response(question, db, chat_history, db_uri):
                     else:
                         raise ValueError("Unexpected data format")
                 except Exception as e:
-                    print(f"Parse error: {e}")
                     output_data = {
                         "type": "error",
-                        "message": f"Failed to parse query results: {str(e)}"
+                        "message": f"Failed to parse: {str(e)}"
                     }
             else:
                 output_data = {
                     "type": "error",
-                    "message": f"Unexpected result format: {clean_result[:200]}"
+                    "message": f"Unexpected format: {clean_result[:200]}"
                 }
         else:
-            # Non-SELECT queries
             clean_result = result.strip()
             affected_rows = 0
             
-            if 'Query OK' in clean_result or 'rows affected' in clean_result or 'row affected' in clean_result:
+            if 'Query OK' in clean_result or 'rows affected' in clean_result:
                 match = re.search(r'(\d+) rows? affected', clean_result)
                 affected_rows = int(match.group(1)) if match else 0
-                message = f"Statement executed successfully. {affected_rows} row{'s' if affected_rows != 1 else ''} affected."
+                message = f"Statement executed successfully. {affected_rows} row(s) affected."
             else:
                 message = clean_result or "Statement executed successfully."
             
@@ -491,44 +452,58 @@ def get_response(question, db, chat_history, db_uri):
         sql_query_placeholder = sql_query if 'sql_query' in locals() else 'N/A'
         return f"SQL: `{sql_query_placeholder}`\nOutput: {json.dumps(error_data)}"
 
-# API Endpoints
+# ==================== API ENDPOINTS ====================
 
 @app.post("/api/send-otp")
-async def send_otp_for_signup(request: OtpRequest):
-    """Send OTP via Email"""
+async def send_otp_for_signup(request: OtpRequest, db: Session = Depends(get_db)):
+    """Send OTP - Now stored in database (FIX #1)"""
     otp = generate_otp()
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     
-    otp_storage[request.email] = {"otp": otp, "expires_at": expires_at}
+    # Clean up old OTPs for this email
+    db.query(OTP).filter(OTP.email == request.email).delete()
     
-    print(f"[OTP] Attempting to send email to {request.email}...")
+    # Store in database instead of memory
+    db_otp = OTP(
+        email=request.email,
+        otp=otp,
+        expires_at=expires_at
+    )
+    db.add(db_otp)
+    db.commit()
+    
     email_sent = send_otp_email(request.email, otp)
     
     if email_sent:
         message = "OTP has been sent to your email."
     else:
-        message = "Email sending unavailable; check server logs for OTP."
+        message = "Email unavailable; check server logs for OTP."
     
     print(f"[OTP] Generated OTP for {request.email}: {otp}")
-    print(f"[OTP] Result: {message}\n")
-    
     return {"success": True, "message": message}
 
 @app.post("/api/signup", status_code=201)
 async def signup_user(user: UserCreate, db: Session = Depends(get_db)):
-    """Register new user"""
-    stored_otp_data = otp_storage.get(user.email)
+    """Register new user - OTP verified from database (FIX #1)"""
+    # Get OTP from database instead of memory
+    stored_otp = db.query(OTP).filter(OTP.email == user.email).first()
     
-    if not stored_otp_data:
+    if not stored_otp:
         raise HTTPException(status_code=400, detail="OTP not requested or expired.")
     
-    if datetime.now(timezone.utc) > stored_otp_data["expires_at"]:
-        del otp_storage[user.email]
+    # Check expiration with timezone fix
+    now = datetime.now(timezone.utc)
+    expires_at = make_tz_aware(stored_otp.expires_at)
+    
+    if now > expires_at:
+        db.delete(stored_otp)
+        db.commit()
         raise HTTPException(status_code=400, detail="OTP has expired. Please request a new one.")
     
-    if stored_otp_data["otp"] != user.otp:
+    if stored_otp.otp != user.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP provided.")
     
+    # Check for existing users
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -541,6 +516,7 @@ async def signup_user(user: UserCreate, db: Session = Depends(get_db)):
     if existing_username:
         raise HTTPException(status_code=400, detail="Username already taken")
     
+    # Create user
     hashed_password = get_password_hash(user.password)
     db_user = User(
         email=user.email,
@@ -552,15 +528,17 @@ async def signup_user(user: UserCreate, db: Session = Depends(get_db)):
         hashed_password=hashed_password
     )
     db.add(db_user)
+    
+    # Clean up used OTP
+    db.delete(stored_otp)
     db.commit()
     db.refresh(db_user)
-    del otp_storage[user.email]
     
     return {"success": True, "message": "User created successfully"}
 
 @app.post("/api/login")
 async def login_for_access_token(form_data: UserLogin, db: Session = Depends(get_db)):
-    """Login with email or username"""
+    """Login with email or username - No session token"""
     user = get_user(form_data.identifier, db)
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email/username or password")
@@ -581,18 +559,141 @@ async def login_for_access_token(form_data: UserLogin, db: Session = Depends(get
 
 @app.post("/api/connect")
 async def connect_db(config: DBConfig):
+    """Connect to MySQL database - No auth required"""
     print(f"Received connect request: host={config.host}, port={config.port}, user={config.user}, database={config.database}")
+    
     try:
+        # Build connection string
         db_uri = f"mysql+mysqlconnector://{config.user}:{config.password}@{config.host}:{config.port}/{config.database}"
+        
+        # Test connection with connection pooling (FIX #2)
+        test_engine = create_engine(
+            db_uri,
+            poolclass=pool.QueuePool,
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=30,
+            pool_recycle=3600,
+            pool_pre_ping=True
+        )
+        
+        with test_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        
+        # Create SQLDatabase instance
         test_db = SQLDatabase.from_uri(db_uri)
         test_db.get_table_info()
         
+        # Store in app state
         app.state.db_uri = db_uri
+        app.state.db_name = config.database
+        
         print("Database connection successful")
         return {"success": True, "message": "Database connected successfully"}
+    
+    except ProgrammingError as e:
+        error_msg = str(e)
+        print(f"ProgrammingError: {error_msg}")
+        
+        if "Unknown database" in error_msg or "1049" in error_msg:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "success": False,
+                    "error": "Database Not Found",
+                    "message": f"The database '{config.database}' does not exist on the MySQL server.",
+                    "suggestion": f"Please create the database first using: CREATE DATABASE `{config.database}`;",
+                    "code": "DATABASE_NOT_FOUND"
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": "SQL Programming Error",
+                    "message": error_msg,
+                    "code": "SQL_ERROR"
+                }
+            )
+    
+    except OperationalError as e:
+        error_msg = str(e)
+        print(f"OperationalError: {error_msg}")
+        
+        if "Access denied" in error_msg or "1045" in error_msg:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "success": False,
+                    "error": "Authentication Failed",
+                    "message": "Invalid username or password for the MySQL server.",
+                    "suggestion": "Please verify your MySQL username and password.",
+                    "code": "AUTH_FAILED"
+                }
+            )
+        
+        elif "Can't connect" in error_msg or "Connection refused" in error_msg or "2003" in error_msg:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "success": False,
+                    "error": "Connection Refused",
+                    "message": f"Cannot connect to MySQL server at {config.host}:{config.port}.",
+                    "suggestion": "Please verify the host and port are correct and the MySQL server is running.",
+                    "code": "CONNECTION_REFUSED"
+                }
+            )
+        
+        elif "timeout" in error_msg.lower() or "2013" in error_msg or "Lost connection" in error_msg:
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "success": False,
+                    "error": "Connection Timeout",
+                    "message": "Connection to MySQL server timed out.",
+                    "suggestion": "Please check your network connection and MySQL server status.",
+                    "code": "CONNECTION_TIMEOUT"
+                }
+            )
+        
+        elif "host" in error_msg.lower() and ("unknown" in error_msg.lower() or "not found" in error_msg.lower()):
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "success": False,
+                    "error": "Host Not Found",
+                    "message": f"Cannot resolve hostname '{config.host}'.",
+                    "suggestion": "Please verify the hostname or IP address is correct.",
+                    "code": "HOST_NOT_FOUND"
+                }
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "success": False,
+                    "error": "Connection Failed",
+                    "message": error_msg,
+                    "suggestion": "Please check your connection parameters and try again.",
+                    "code": "CONNECTION_ERROR"
+                }
+            )
+    
     except Exception as e:
-        print(f"Database connection failed: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Database connection failed: {str(e)}")
+        error_msg = str(e)
+        print(f"Unexpected error: {error_msg}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": "Unknown Error",
+                "message": error_msg,
+                "suggestion": "An unexpected error occurred. Please check your configuration and try again.",
+                "code": "UNKNOWN_ERROR"
+            }
+        )
 
 @app.post("/api/disconnect")
 async def disconnect_db():
@@ -604,6 +705,7 @@ async def disconnect_db():
 
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
+    """Chat endpoint - No auth required"""
     if not hasattr(app.state, "db_uri"):
         raise HTTPException(status_code=400, detail="Database not connected")
     
@@ -622,28 +724,43 @@ async def chat_endpoint(request: ChatRequest):
     except Exception as e:
         print(f"Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-
 @app.get("/api/chat-sessions")
 async def get_chat_sessions(user_id: int = Query(...)):
+    """Get all chat sessions for a specific user"""
     db_session = SessionLocal()
     try:
-        sessions = db_session.query(ChatSession).filter(ChatSession.user_id == user_id).all()
+        # Filter sessions by user_id to ensure isolation
+        sessions = db_session.query(ChatSession).filter(
+            ChatSession.user_id == user_id
+        ).order_by(ChatSession.id.desc()).all()
+        
         result = []
         for session in sessions:
             result.append({
                 "id": session.id,
+                "user_id": session.user_id,  # Include user_id in response
                 "title": session.title,
                 "messages": json.loads(session.messages),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
+        
+        print(f"[GET SESSIONS] Found {len(result)} sessions for user {user_id}")
         return result
+    except Exception as e:
+        print(f"[GET SESSIONS ERROR] {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch chat sessions: {str(e)}")
     finally:
         db_session.close()
 
 @app.post("/api/chat-sessions")
 async def create_chat_session(session: dict):
+    """Create a new chat session for a user"""
     db_session = SessionLocal()
     try:
+        # Ensure user_id is provided
+        if not session.get("user_id"):
+            raise HTTPException(status_code=400, detail="user_id is required")
+        
         new_session = ChatSession(
             user_id=session.get("user_id"),
             title=session.get("title", "Untitled Chat"),
@@ -652,67 +769,102 @@ async def create_chat_session(session: dict):
         db_session.add(new_session)
         db_session.commit()
         db_session.refresh(new_session)
+        
+        print(f"[CREATE SESSION] Created session {new_session.id} for user {new_session.user_id}")
+        
         return {
             "id": new_session.id,
+            "user_id": new_session.user_id,
             "title": new_session.title,
             "messages": json.loads(new_session.messages),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+    except HTTPException as e:
+        raise e
     except Exception as e:
         db_session.rollback()
+        print(f"[CREATE SESSION ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create chat session: {str(e)}")
     finally:
         db_session.close()
 
 @app.put("/api/chat-sessions/{session_id}")
 async def update_chat_session(session_id: int, session: dict):
+    """Update a chat session (with user verification)"""
     db_session = SessionLocal()
     try:
-        existing_session = db_session.query(ChatSession).filter(ChatSession.id == session_id).first()
+        existing_session = db_session.query(ChatSession).filter(
+            ChatSession.id == session_id
+        ).first()
+        
         if not existing_session:
             raise HTTPException(status_code=404, detail="Chat session not found")
+        
+        # Verify that the session belongs to the requesting user
         if existing_session.user_id != session.get("user_id"):
+            print(f"[UPDATE SESSION] Unauthorized: Session {session_id} belongs to user {existing_session.user_id}, but user {session.get('user_id')} tried to access it")
             raise HTTPException(status_code=403, detail="Unauthorized to update this session")
         
         existing_session.title = session.get("title", existing_session.title)
         existing_session.messages = json.dumps(session.get("messages", json.loads(existing_session.messages)))
         db_session.commit()
         
+        print(f"[UPDATE SESSION] Updated session {session_id} for user {existing_session.user_id}")
+        
         return {
             "id": existing_session.id,
+            "user_id": existing_session.user_id,
             "title": existing_session.title,
             "messages": json.loads(existing_session.messages),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+    except HTTPException as e:
+        raise e
     except Exception as e:
         db_session.rollback()
+        print(f"[UPDATE SESSION ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update chat session: {str(e)}")
     finally:
         db_session.close()
 
 @app.delete("/api/chat-sessions/{session_id}")
 async def delete_chat_session(session_id: int, user_id: int = Query(...)):
+    """Delete a chat session (with user verification)"""
     db_session = SessionLocal()
     try:
-        session = db_session.query(ChatSession).filter(ChatSession.id == session_id).first()
+        session = db_session.query(ChatSession).filter(
+            ChatSession.id == session_id
+        ).first()
+        
+        # ✅ FIX: If session doesn't exist, return success (idempotent delete)
         if not session:
-            raise HTTPException(status_code=404, detail="Chat session not found")
+            print(f"[DELETE SESSION] Session {session_id} not found, returning success (already deleted)")
+            return {"success": True, "message": "Chat session not found or already deleted"}
+        
+        # ✅ FIX: Verify ownership BEFORE deleting
         if session.user_id != user_id:
+            print(f"[DELETE SESSION] Unauthorized: Session {session_id} belongs to user {session.user_id}, but user {user_id} tried to delete it")
             raise HTTPException(status_code=403, detail="Unauthorized to delete this session")
         
+        # Delete the session
         db_session.delete(session)
         db_session.commit()
+        
+        print(f"[DELETE SESSION] Successfully deleted session {session_id} for user {user_id}")
+        
         return {"success": True, "message": "Chat session deleted"}
     except HTTPException as e:
         raise e
     except Exception as e:
         db_session.rollback()
+        print(f"[DELETE SESSION ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete chat session: {str(e)}")
     finally:
         db_session.close()
 
 @app.post("/api/confirm-sql")
 async def confirm_sql_action(req: ConfirmSQLRequest):
+    """Confirm and execute dangerous SQL"""
     if not req.confirm:
         return {
             "type": "status",

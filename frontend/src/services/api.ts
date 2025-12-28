@@ -1,42 +1,38 @@
 // src/services/api.ts
+// ✅ SIMPLIFIED - No authentication, no tokens!
+
 import axios from 'axios';
 
-// Create an axios instance with the base URL from environment variables
+// Create an axios instance with the base URL
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
 });
 
-// ---- TYPE DEFINITIONS ----
-// These should match your FastAPI Pydantic models
+// ============= TYPE DEFINITIONS =============
 
-// Matches the DBConfig model in Python
 export interface DBConfig {
   host: string;
   port: number;
   user: string;
-  password?: string; // Optional as it has a default in Python
+  password?: string;
   database: string;
 }
 
-// Represents a single message in the chat history
 export interface ChatMessage {
-  role: 'ai' | 'user'; // 'ai' for AIMessage, 'user' for HumanMessage
+  role: 'ai' | 'user';
   content: string;
 }
 
-// Matches the ChatRequest model in Python
 export interface ChatRequestPayload {
   question: string;
   chat_history: ChatMessage[];
 }
 
-// Auth types
-// ✅ UPDATED: Changed contactNumber to phone
 export interface SignupData {
   firstName: string;
   lastName: string;
   username: string;
-  phone: string;  // ✅ CHANGED: contactNumber → phone
+  phone: string;
   gender: string;
   email: string;
   password: string;
@@ -48,13 +44,11 @@ export interface LoginData {
   password: string;
 }
 
-// ✅ UPDATED: OtpRequest now supports both email and phone
 export interface OtpRequest {
   email?: string;
   phone?: string;
 }
 
-// ✅ UPDATED: Changed contactNumber to phone
 export interface UserData {
   id: number;
   email: string;
@@ -62,13 +56,14 @@ export interface UserData {
   lastName: string;
   username: string;
   gender: string;
-  phone?: string;  // ✅ CHANGED: contactNumber → phone
+  phone?: string;
 }
 
 export interface LoginResponse {
   success: boolean;
   message: string;
   user: UserData;
+  // ✅ REMOVED: No token anymore!
 }
 
 export interface SignupResponse {
@@ -81,18 +76,15 @@ export interface OtpResponse {
   message: string;
 }
 
-
-// ---- API FUNCTIONS ----
+// ============= API FUNCTIONS =============
 
 /**
- * Connects to the database.
- * @param config - The database connection details.
- * @returns A promise that resolves with the server's response.
+ * Connect to database
  */
 export const connectToDB = async (config: DBConfig) => {
   try {
     const { data } = await api.post('/api/connect', config);
-    return data; // Expected: { success: true } or { success: false, error: "..." }
+    return data;
   } catch (error) {
     console.error("Failed to connect to the database:", error);
     throw error;
@@ -100,14 +92,25 @@ export const connectToDB = async (config: DBConfig) => {
 };
 
 /**
- * Sends a message to the chat endpoint.
- * @param payload - The question and chat history.
- * @returns A promise that resolves with the AI's response.
+ * Disconnect from database
+ */
+export const disconnectFromDB = async () => {
+  try {
+    const { data } = await api.post('/api/disconnect');
+    return data;
+  } catch (error) {
+    console.error("Failed to disconnect from the database:", error);
+    throw error;
+  }
+};
+
+/**
+ * Send chat message
  */
 export const sendChatMessage = async (payload: ChatRequestPayload) => {
   try {
     const { data } = await api.post('/api/chat', payload);
-    return data; // Expected: { success: true, response: "..." } or { success: false, error: "..." }
+    return data;
   } catch (error) {
     console.error("Failed to send chat message:", error);
     throw error;
@@ -115,9 +118,7 @@ export const sendChatMessage = async (payload: ChatRequestPayload) => {
 };
 
 /**
- * Sends OTP to the user's email or phone for signup verification.
- * @param request - The email and/or phone to send OTP to.
- * @returns A promise that resolves with the server's response.
+ * Send OTP
  */
 export const sendOtp = async (request: OtpRequest): Promise<OtpResponse> => {
   try {
@@ -130,9 +131,7 @@ export const sendOtp = async (request: OtpRequest): Promise<OtpResponse> => {
 };
 
 /**
- * Signs up a new user.
- * @param userData - The user signup data including OTP.
- * @returns A promise that resolves with the signup response.
+ * Signup
  */
 export const signup = async (userData: SignupData): Promise<SignupResponse> => {
   try {
@@ -145,9 +144,7 @@ export const signup = async (userData: SignupData): Promise<SignupResponse> => {
 };
 
 /**
- * Logs in a user.
- * @param credentials - The login credentials (identifier and password).
- * @returns A promise that resolves with the login response including user data.
+ * Login - ✅ SIMPLIFIED: No token handling!
  */
 export const login = async (credentials: LoginData): Promise<LoginResponse> => {
   try {
@@ -155,6 +152,91 @@ export const login = async (credentials: LoginData): Promise<LoginResponse> => {
     return data;
   } catch (error) {
     console.error("Failed to login:", error);
+    throw error;
+  }
+};
+
+/**
+ * Logout - ✅ SIMPLIFIED: Just a placeholder, no backend call needed
+ */
+export const logout = async (): Promise<void> => {
+  // No backend call needed anymore
+  return Promise.resolve();
+};
+
+/**
+ * Get chat sessions
+ */
+export const getChatSessions = async (userId: number) => {
+  try {
+    const { data } = await api.get(`/api/chat-sessions?user_id=${userId}`);
+    return data;
+  } catch (error) {
+    console.error("Failed to get chat sessions:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create chat session
+ */
+export const createChatSession = async (userId: number, title: string, messages: ChatMessage[] = []) => {
+  try {
+    const { data } = await api.post('/api/chat-sessions', {
+      user_id: userId,
+      title,
+      messages
+    });
+    return data;
+  } catch (error) {
+    console.error("Failed to create chat session:", error);
+    throw error;
+  }
+};
+
+/**
+ * Update chat session
+ */
+export const updateChatSession = async (sessionId: number, userId: number, title: string, messages: ChatMessage[]) => {
+  try {
+    const { data } = await api.put(`/api/chat-sessions/${sessionId}`, {
+      user_id: userId,
+      title,
+      messages
+    });
+    return data;
+  } catch (error) {
+    console.error("Failed to update chat session:", error);
+    throw error;
+  }
+};
+
+/**
+ * Delete chat session
+ */
+export const deleteChatSession = async (sessionId: number, userId: number) => {
+  try {
+    const { data } = await api.delete(`/api/chat-sessions/${sessionId}?user_id=${userId}`);
+    return data;
+  } catch (error) {
+    console.error("Failed to delete chat session:", error);
+    throw error;
+  }
+};
+
+/**
+ * Confirm SQL execution
+ */
+export const confirmSQL = async (userId: number, sql: string, confirm: boolean) => {
+  try {
+    const { data } = await api.post('/api/confirm-sql', {
+      user_id: userId,
+      sql,
+      confirm
+    });
+    return data;
+  } catch (error) {
+    console.error("Failed to confirm SQL:", error);
     throw error;
   }
 };
