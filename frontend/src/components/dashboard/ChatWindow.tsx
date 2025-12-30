@@ -11,6 +11,7 @@ interface Message {
   type: 'user' | 'assistant' | 'error';
   content: string;
   role?: string;
+  canEdit?: boolean;
 }
 
 interface ChatWindowProps {
@@ -134,10 +135,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   };
   
   return (
-    <div className="flex-1 overflow-y-auto bg-white p-4">
-      <div className="max-w-4xl mx-auto space-y-6 py-4">
+    <div className="flex-1 overflow-y-auto bg-white">
+      <div className="max-w-4xl mx-auto px-4">
+        <div className="space-y-6 [&>*:first-child]:!mt-0 [&>*:first-child]:!pt-0 pb-4">
         {messages.length === 0 ? (
-          <div className="text-center py-12 max-w-2xl mx-auto">
+          <div className="text-center pb-12 max-w-2xl mx-auto pt-0">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">
               Welcome to Query Genie
             </h2>
@@ -166,9 +168,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             if (effectiveType === 'user') {
               const isEditing = editingMessageId === message.id;
               const isLastUserMessage = message.id === lastUserMessageId;
+              const canEditMessage = message.canEdit !== false; // Check if editing is allowed
               
               return (
-                <div key={message.id} className="flex justify-end group px-4">
+                <div key={message.id} className="flex justify-end group">
                   <div className="max-w-[70%]">
                     {isEditing ? (
                       <div className="max-w-[70%]">
@@ -223,7 +226,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                               <Copy className="h-4 w-4" />
                             )}
                           </Button>
-                          {isLastUserMessage && (
+                          {isLastUserMessage && canEditMessage && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -244,7 +247,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
             if (effectiveType === 'error') {
               return (
-                <div key={message.id} className="flex justify-center px-4">
+                <div key={message.id} className="flex justify-center">
                   <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg max-w-2xl flex items-start gap-3">
                     <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
                     <div className="space-y-2">
@@ -268,7 +271,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               const { sql, output } = parseBackendResponse(message.content);
 
               return (
-                <div key={message.id} className="flex justify-start w-full group px-4">
+                <div key={message.id} className="flex justify-start w-full group">
                   <div className="w-full max-w-full space-y-3">
                     {output && output.type === 'select' && output.data && output.columns && (
                       <EnhancedDataTable
@@ -365,6 +368,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           })
         )}
       </div>
+    </div>
     </div>
   );
 };

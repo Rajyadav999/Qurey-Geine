@@ -5,8 +5,11 @@ import ChatWindow from '@/components/dashboard/ChatWindow';
 import UserProfile from '@/components/dashboard/UserProfile';
 import Logo from '@/components/Logo';
 import { DatabaseConnectionModal } from '@/components/dashboard/DatabaseConnectionModal';
+import DeleteConfirmationModal from '@/components/dashboard/DeleteConfirmationModal';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import ConnectionStatus from '@/components/dashboard/ConnectionStatus';
+import { confirmSQL } from '@/services/api'; 
 
 const API_BASE = "http://localhost:8000";
 
@@ -16,6 +19,7 @@ interface Message {
   type: 'user' | 'assistant' | 'error';
   role?: string;
   timestamp: Date;
+  canEdit?: boolean;
 }
 
 interface ChatSession {
@@ -24,6 +28,14 @@ interface ChatSession {
   title: string;
   timestamp: string | number | Date;
   messages: Message[];
+}
+
+interface PendingSQL {
+  sql: string;
+  table: {
+    columns: string[];
+    data: string[][];
+  };
 }
 
 const DashboardPage = () => {
@@ -36,6 +48,10 @@ const DashboardPage = () => {
   const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [pendingSQL, setPendingSQL] = useState<PendingSQL | null>(null);
+  const [isExecutingSQL, setIsExecutingSQL] = useState(false);
   
   const { toast } = useToast();
   const { user } = useAuth();
@@ -220,6 +236,154 @@ const DashboardPage = () => {
     }
   };
 
+  const handleRenameChat = async (chatId: string, newTitle: string) => {
+    if (!user?.id) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "User not authenticated",
+      });
+      return;
+    }
+
+    console.log(`[DASHBOARD] Renaming chat ${chatId} to "${newTitle}"`);
+    
+    setChatHistory(prev => 
+      prev.map(chat => 
+        chat.id === chatId 
+          ? { ...chat, title: newTitle }
+          : chat
+      )
+    );
+
+    try {
+      const response = await fetch(`${API_BASE}/api/chat-sessions/${chatId}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ 
+          title: newTitle,
+          user_id: parseInt(user.id)
+        })
+      });
+
+      if (response.ok) {
+        console.log(`[DASHBOARD] Successfully renamed chat ${chatId} on backend`);
+        toast({
+          title: "Chat Renamed",
+          description: `Chat renamed to "${newTitle}"`,
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('[DASHBOARD] Backend rename failed:', errorData);
+        toast({
+          title: "Chat Renamed",
+          description: `Chat renamed to "${newTitle}" (local only)`,
+        });
+      }
+    } catch (error: any) {
+      console.error('[DASHBOARD] Rename error:', error);
+      toast({
+        title: "Chat Renamed",
+        description: `Chat renamed to "${newTitle}" (local only)`,
+      });
+    }
+  };
+
+  const handleConfirmSQL = async () => {
+    if (!pendingSQL || !user) return;
+
+    setIsExecutingSQL(true);
+    
+    try {
+      console.log('[DASHBOARD] Executing confirmed SQL:', pendingSQL.sql);
+      
+      const result = await confirmSQL(parseInt(user.id), pendingSQL.sql, true);
+      
+      const messagesWithDisabledEdit = messages.map((msg, index) => {
+        if (index === messages.length - 1 && msg.type === 'user') {
+          return { ...msg, canEdit: false };
+        }
+        return msg;
+      });
+      
+      const assistantMessage: Message = {
+        id: Date.now().toString(),
+        content: `SQL: \`${pendingSQL.sql}\`\nOutput: ${JSON.stringify(result)}`,
+        type: 'assistant',
+        role: 'ai',
+        timestamp: new Date()
+      };
+      
+      const updatedMessages = [...messagesWithDisabledEdit, assistantMessage];
+      setMessages(updatedMessages);
+      
+      if (currentChatId) {
+        const chatTitle = messagesWithDisabledEdit[0]?.content.substring(0, 50) || 'SQL Query';
+        await saveChatToBackend(currentChatId, chatTitle, updatedMessages, false);
+      }
+      
+      toast({
+        title: "✅ SQL Executed",
+        description: "Your query has been executed successfully",
+      });
+      
+    } catch (error: any) {
+      console.error('[DASHBOARD] SQL execution error:', error);
+      
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        content: `Error executing SQL: ${error.message}`,
+        type: 'error',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+      
+      toast({
+        variant: "destructive",
+        title: "Execution Failed",
+        description: error.message || "Failed to execute SQL",
+      });
+    } finally {
+      setIsExecutingSQL(false);
+      setIsDeleteModalOpen(false);
+      setPendingSQL(null);
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancelSQL = async () => {
+    if (!pendingSQL || !user) return;
+
+    try {
+      await confirmSQL(parseInt(user.id), pendingSQL.sql, false);
+      
+      const cancelMessage: Message = {
+        id: Date.now().toString(),
+        content: 'SQL execution cancelled by user',
+        type: 'assistant',
+        role: 'ai',
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, cancelMessage]);
+      
+      toast({
+        title: "Cancelled",
+        description: "SQL execution has been cancelled",
+      });
+      
+    } catch (error) {
+      console.error('[DASHBOARD] Cancel error:', error);
+    } finally {
+      setIsDeleteModalOpen(false);
+      setPendingSQL(null);
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async (message: string) => {
     if (!message || !message.trim()) return;
     
@@ -289,6 +453,39 @@ const DashboardPage = () => {
 
       const data = await response.json();
 
+      if (data.success && data.response) {
+        try {
+          console.log('[DASHBOARD] Full response:', data.response);
+          
+          let outputData;
+          
+          try {
+            outputData = JSON.parse(data.response);
+          } catch {
+            const responseParts = data.response.split('\nOutput: ');
+            if (responseParts.length === 2) {
+              outputData = JSON.parse(responseParts[1]);
+            }
+          }
+          
+          if (outputData && outputData.type === 'confirmation_required') {
+            console.log('[DASHBOARD] Confirmation required for SQL:', outputData.sql);
+            console.log('[DASHBOARD] Table data:', outputData.table);
+            
+            setPendingSQL({
+              sql: outputData.sql,
+              table: outputData.table
+            });
+            
+            setIsDeleteModalOpen(true);
+            return;
+          }
+        } catch (parseError) {
+          console.error('[DASHBOARD] Error parsing response:', parseError);
+          console.log('[DASHBOARD] Normal response (not confirmation)');
+        }
+      }
+
       let assistantContent = '';
       if (data.success) {
         assistantContent = data.response;
@@ -326,7 +523,6 @@ const DashboardPage = () => {
     }
   };
 
-  // ✅ NEW: Handle message editing
   const handleEditMessage = async (messageId: string, newContent: string) => {
     console.log('[DASHBOARD] Editing message:', messageId, 'New content:', newContent);
     
@@ -352,11 +548,9 @@ const DashboardPage = () => {
       return;
     }
 
-    // STEP 1: Remove all messages after the edited message
     const updatedMessages = messages.slice(0, messageIndex);
     console.log(`[DASHBOARD] Removed ${messages.length - messageIndex} messages after edit`);
     
-    // STEP 2: Create edited message
     const editedMessage: Message = {
       ...message,
       content: newContent,
@@ -364,12 +558,10 @@ const DashboardPage = () => {
       timestamp: new Date()
     };
     
-    // STEP 3: Update state with edited message only
     setMessages([...updatedMessages, editedMessage]);
     setIsLoading(true);
 
     try {
-      // STEP 4: Prepare chat history
       const chatHistoryPayload = updatedMessages.map(msg => ({
         role: msg.type === 'user' ? 'human' : 'ai',
         content: msg.content
@@ -377,7 +569,6 @@ const DashboardPage = () => {
 
       console.log('[DASHBOARD] Sending edited message to backend...');
 
-      // STEP 5: Send to backend as NEW prompt
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -392,7 +583,6 @@ const DashboardPage = () => {
       const data = await response.json();
       console.log('[DASHBOARD] Received new response from backend');
 
-      // STEP 6: Add fresh AI response
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: data.success ? data.response : `Error: ${data.error}`,
@@ -404,7 +594,6 @@ const DashboardPage = () => {
       const finalMessages = [...updatedMessages, editedMessage, assistantMessage];
       setMessages(finalMessages);
       
-      // Save updated chat to backend
       if (currentChatId) {
         const chatTitle = finalMessages[0]?.content.substring(0, 50) || 'Edited Chat';
         await saveChatToBackend(currentChatId, chatTitle, finalMessages, false);
@@ -459,7 +648,8 @@ const DashboardPage = () => {
           content: msg.content,
           type: msg.type,
           role: msg.role || (msg.type === 'user' ? 'user' : 'ai'),
-          timestamp: msg.timestamp.toISOString()
+          timestamp: msg.timestamp.toISOString(),
+          canEdit: msg.canEdit
         }))
       };
 
@@ -604,12 +794,19 @@ const DashboardPage = () => {
           onDisconnect={handleDisconnect}
           userId={user?.id ? parseInt(user.id) : null}
           isLoadingHistory={isLoadingHistory}
+          onRenameChat={handleRenameChat}
         />
 
         <div className="flex-1 flex flex-col relative">
           <header className="flex items-center justify-between p-4 bg-surface">
             <Logo size="sm" />
-            <UserProfile />
+            <div className="flex items-center gap-3">
+              <ConnectionStatus 
+                isConnected={isConnected} 
+                databaseName={connectionData?.database}
+              />
+              <UserProfile />
+            </div>
           </header>
 
           <ChatWindow 
@@ -632,6 +829,22 @@ const DashboardPage = () => {
         onClose={() => setIsModalOpen(false)}
         onConnect={handleConnect}
       />
+
+      {pendingSQL && (
+        <DeleteConfirmationModal
+          isOpen={isDeleteModalOpen}
+          onClose={handleCancelSQL}
+          onConfirm={handleConfirmSQL}
+          queryDetails={{
+            action: pendingSQL.table.data[0][0],
+            table: pendingSQL.table.data[0][1],
+            condition: pendingSQL.table.data[0][2],
+            impact: pendingSQL.table.data[0][3]
+          }}
+          sql={pendingSQL.sql}
+          isLoading={isExecutingSQL}
+        />
+      )}
     </div>
   );
 };
