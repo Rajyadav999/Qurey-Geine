@@ -59,6 +59,11 @@ https://your-deployment-link-here
 - MySQL Connector
 - Passlib (bcrypt)
 
+### DevOps
+- Docker
+- Docker Compose
+- Nginx
+
 -----
 
 ## 📋 Prerequisites
@@ -67,7 +72,8 @@ https://your-deployment-link-here
 - Node.js 16 or higher  
 - MySQL Server  
 - Groq API Key  
-
+- Docker (v20+)
+- Docker Compose (v2+)
 -----
 
 ## 📦 Installation & Setup
@@ -76,6 +82,53 @@ https://your-deployment-link-here
 ```bash
 git clone https://github.com/YOUR_USERNAME/query-genie.git
 cd query-genie
+
+### 1.🐳 Docker Setup (Recommended)
+This is the recommended and easiest way to run Query Genie.
+Docker runs frontend, backend, and database automatically.
+
+▶️ Run the Application (Docker)
+From the project root:
+
+# Build all services
+docker-compose build
+
+# Start all services
+docker-compose up
+
+# Run in background
+docker-compose up -d
+
+🛑 Stop Containers
+docker-compose down
+
+Delete database data (⚠️ irreversible):
+docker-compose down -v
+
+If you are using Docker, skip manual backend and frontend setup,
+but do not forget to create the backend/.env file.
+
+🔐 Environment Variables
+Create a .env file inside the backend directory:
+
+# Groq API
+GROQ_API_KEY=your_groq_api_key_here
+
+# Email (OTP)
+EMAIL_HOST_USER=your_email@gmail.com
+EMAIL_HOST_PASSWORD=your_gmail_app_password
+
+#Getting API Keys
+Groq API Key
+Visit Groq Console
+Sign up for a free account
+Generate an API key from the dashboard
+
+#Gmail App Password
+Enable 2-factor authentication on your Google account
+Go to App Passwords
+Generate a new app password for "Mail"
+Use this password in your .env file
 
 ### 2. Backend Setup
 ```bash
@@ -92,26 +145,6 @@ source venv/bin/activate
 
 # Install all dependencies in one command!
 pip install -r requirements.txt
-
-Create a .env file inside the backend directory:
-# Groq API Configuration
-GROQ_API_KEY=your_groq_api_key_here
-
-# Email Configuration (Gmail)
-EMAIL_HOST_USER=your_email@gmail.com
-EMAIL_HOST_PASSWORD=your_app_password_here
-
-#Getting API Keys
-Groq API Key
-Visit Groq Console
-Sign up for a free account
-Generate an API key from the dashboard
-
-#Gmail App Password
-Enable 2-factor authentication on your Google account
-Go to App Passwords
-Generate a new app password for "Mail"
-Use this password in your .env file
 
 ### 3. Frontend Setup
 Navigate to frontend directory (if separate)
@@ -168,7 +201,6 @@ query-genie/
 │   ├── package.json
 │   └── src/
 ├── docker-compose.yml
-├── .env (root level)
 └── README.md
 ```
 
