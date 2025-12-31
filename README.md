@@ -156,16 +156,19 @@ Access the application at `http://localhost:5173`
 ```
 query-genie/
 ├── backend/
-│   ├── backend.py          # Main FastAPI application
-│   ├── requirements.txt    # Python dependencies
-│   └── .env               # Environment variables (not in git)
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── backend.py
+│   ├── requirements.txt
+│   └── .env
 ├── frontend/
-│   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── pages/         # Page components
-│   │   └── App.tsx        # Main app component
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── nginx.conf
 │   ├── package.json
-│   └── vite.config.ts
+│   └── src/
+├── docker-compose.yml
+├── .env (root level)
 └── README.md
 ```
 
